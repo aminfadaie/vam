@@ -198,14 +198,14 @@ code{background:var(--surface-2);border:1px solid var(--border);border-radius:5p
     </section>
 
     <section id="v-people" class="hidden">
-      <p class="sub muted" style="margin:0 0 10px">روی هر نفر بزن تا وام‌هایش را ببینی. برای عوض کردن نفرِ یک وام، در بخش «وام‌ها» روی آن وام بزن.</p>
+      <p class="sub muted" style="margin:0 0 10px">روی هر نفر بزن تا وام‌هایش را ببینی. برای عوض کردن نام وام‌گیرنده، در بخش «وام‌ها» روی آن وام بزن.</p>
       <div class="grid people" id="peopleCards"></div>
     </section>
 
     <section id="v-loans" class="hidden">
       <div class="card">
         <div class="filters">
-          <input id="lq" placeholder="جستجوی نام وام">
+          <input id="lq" placeholder="جستجو (نام یا بانک)">
           <select id="lperson"></select>
           <select id="ltype"></select>
           <select id="lstat">
@@ -217,9 +217,9 @@ code{background:var(--surface-2);border:1px solid var(--border);border-radius:5p
             <option value="next">مرتب: نزدیک‌ترین قسط</option><option value="amount">مرتب: مبلغ وام</option>
           </select>
         </div>
-        <p class="sub">روی هر وام بزن تا اقساطش باز شود؛ آنجا می‌توانی قسط‌ها را پرداخت‌شده بزنی یا نفرِ وام را عوض کنی.</p>
+        <p class="sub">روی هر وام بزن تا اقساطش باز شود؛ آنجا می‌توانی قسط‌ها را پرداخت‌شده بزنی یا نام وام‌گیرنده را عوض کنی.</p>
         <div class="tw"><table>
-          <thead><tr><th>#</th><th>نام وام</th><th>نفر</th><th>نوع</th><th>تاریخ دریافت</th><th class="num">مبلغ وام</th><th>اقساط</th><th>پیشرفت</th><th class="num">مانده (تومان)</th><th>قسط بعدی</th></tr></thead>
+          <thead><tr><th>#</th><th>نام</th><th>بانک</th><th>سود</th><th>مدت (ماه)</th><th>تاریخ دریافت</th><th class="num">مبلغ وام</th><th>اقساط</th><th>پیشرفت</th><th class="num">مانده (تومان)</th><th>قسط بعدی</th><th class="num">مبلغ قسط بعدی</th></tr></thead>
           <tbody id="lbody"></tbody><tfoot id="lfoot"></tfoot>
         </table></div>
       </div>
@@ -238,7 +238,7 @@ code{background:var(--surface-2);border:1px solid var(--border);border-radius:5p
         </div>
         <p class="sub">برای ثبت پرداخت، روی وضعیت قسط بزن.</p>
         <div class="tw"><table>
-          <thead><tr><th>تاریخ سررسید</th><th>نام وام</th><th>نفر</th><th>قسط</th><th class="num">مبلغ (تومان)</th><th>وضعیت</th></tr></thead>
+          <thead><tr><th>تاریخ سررسید</th><th>نام</th><th>بانک</th><th>قسط</th><th class="num">مبلغ (تومان)</th><th>وضعیت</th></tr></thead>
           <tbody id="ibody"></tbody><tfoot id="ifoot"></tfoot>
         </table></div>
       </div>
@@ -295,6 +295,7 @@ const fa = n => nf.format(Math.round(n));
 const faDigits = s => String(s).replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[d]);
 const fd = d => faDigits(d.replace(/-/g,"/"));
 const ym = d => d.slice(0,7);
+const rateTxt = r => r ? faDigits(r)+"٪" : "بدون سود";
 const ymLabel = k => MONTHS[+k.slice(5,7)-1] + " " + faDigits(k.slice(0,4));
 const lsGet = k => { try{ return localStorage.getItem(k); }catch(e){ return null; } };
 const lsSet = (k,v) => { try{ v==null ? localStorage.removeItem(k) : localStorage.setItem(k,v); }catch(e){} };
@@ -464,8 +465,8 @@ document.addEventListener("click", ev => {
   ev.stopPropagation();
   const id=+b.dataset.id, n=+b.dataset.n, l=LOANS.find(x=>x.id===id), i=l.inst.find(x=>x.n===n);
   const prev = {t:"paid", id, n, v:i.paid?1:0, on:i.on||null};
-  if(i.paid) doOp({t:"paid", id, n, v:0, on:null}, `قسط ${faDigits(n)} «${l.name}» پرداخت‌نشده شد`, prev);
-  else doOp({t:"paid", id, n, v:1, on:TODAY}, `قسط ${faDigits(n)} «${l.name}» پرداخت‌شده ثبت شد`, prev);
+  if(i.paid) doOp({t:"paid", id, n, v:0, on:null}, `قسط ${faDigits(n)} ${l.person} (${l.bank}) پرداخت‌نشده شد`, prev);
+  else doOp({t:"paid", id, n, v:1, on:TODAY}, `قسط ${faDigits(n)} ${l.person} (${l.bank}) پرداخت‌شده ثبت شد`, prev);
 }, true);
 
 let toastTimer=null;
@@ -514,7 +515,7 @@ function renderMonth(){
   $("#mTitle").textContent = monthOffset ? "اقساط ماه بعد" : "اقساط این ماه";
   const overdue = list.filter(i=>ym(i.due)!==key).length;
   $("#mSub").textContent = `${ymLabel(key)} · ${faDigits(list.length-overdue)} قسط` + (overdue? ` + ${faDigits(overdue)} قسط عقب‌افتاده از ماه‌های قبل`:"");
-  $("#mList").innerHTML = list.length ? list.map(i=>`<div class="mrow"><span class="d">${fd(i.due)}</span><span class="n">${esc(i.loan.name)} <span class="muted">(قسط ${faDigits(i.n)})</span></span><span>${fa(i.amt)}</span><span>${payBtn(i)}</span></div>`).join("") : `<div class="empty">قسطی در این ماه نیست.</div>`;
+  $("#mList").innerHTML = list.length ? list.map(i=>`<div class="mrow"><span class="d">${fd(i.due)}</span><span class="n">${esc(i.loan.person)} <span class="muted">· ${esc(i.loan.bank)} (قسط ${faDigits(i.n)})</span></span><span>${fa(i.amt)}</span><span>${payBtn(i)}</span></div>`).join("") : `<div class="empty">قسطی در این ماه نیست.</div>`;
   $("#mTot").innerHTML = `<span>مانده پرداخت</span><span>${fa(list.filter(i=>!i.paid).reduce((s,i)=>s+i.amt,0))} تومان</span>`;
 }
 
@@ -587,8 +588,8 @@ function renderPeople(){
 
 // ===== loans =====
 function setupFilters(){
-  const types=[...new Set(DATA.loans.map(l=>l.type))];
-  $("#ltype").innerHTML = `<option value="">همه نوع‌ها</option>` + types.map(t=>`<option>${esc(t)}</option>`).join("");
+  const banks=[...new Set(DATA.loans.map(l=>l.bank))];
+  $("#ltype").innerHTML = `<option value="">همه بانک‌ها</option>` + banks.map(t=>`<option>${esc(t)}</option>`).join("");
   ["#lq","#lperson","#ltype","#lstat","#lsort"].forEach(s=>$(s).addEventListener("input", renderLoans));
   ["#imonth","#iperson","#iloan","#istat"].forEach(s=>$(s).addEventListener("input", renderInst));
   const months=[...new Set(DATA.loans.flatMap(l=>l.inst.map(i=>ym(i[1])))) ].sort(), cur=TODAY.slice(0,7);
@@ -599,43 +600,43 @@ function refreshPersonSelects(){
   ["#lperson","#iperson"].forEach(s => { const v=$(s).value;
     $(s).innerHTML = `<option value="">همه افراد</option>` + DATA.persons.filter(p=>LOANS.some(l=>l.person===p)).map(p=>`<option>${esc(p)}</option>`).join(""); $(s).value=v; });
   const v=$("#iloan").value, ip=$("#iperson").value;
-  $("#iloan").innerHTML = `<option value="">همه وام‌ها</option>` + LOANS.filter(l=>!ip||l.person===ip).sort((a,b)=>a.name.localeCompare(b.name,"fa")).map(l=>`<option value="${l.id}">${esc(l.name)}</option>`).join("");
+  $("#iloan").innerHTML = `<option value="">همه وام‌ها</option>` + LOANS.filter(l=>!ip||l.person===ip).sort((a,b)=>a.person.localeCompare(b.person,"fa")||a.date.localeCompare(b.date)).map(l=>`<option value="${l.id}">${esc(l.person)} · ${esc(l.bank)} · ${fd(l.date)}</option>`).join("");
   $("#iloan").value=v;
 }
 const openLoans = new Set();
 function renderLoans(){
   const q=$("#lq").value.trim(), pp=$("#lperson").value, t=$("#ltype").value, st=$("#lstat").value, so=$("#lsort").value;
-  let rows = LOANS.filter(l => (!q || l.name.includes(q)) && (!pp || l.person===pp) && (!t || l.type===t) && (!st || l.status===st));
+  let rows = LOANS.filter(l => (!q || l.person.includes(q) || l.bank.includes(q) || (l.origName||"").includes(q)) && (!pp || l.person===pp) && (!t || l.bank===t) && (!st || l.status===st));
   const cmp = { date:(a,b)=>a.date.localeCompare(b.date)||a.id-b.id, remain:(a,b)=>b.remain-a.remain,
     next:(a,b)=>(a.next?a.next.due:"9999").localeCompare(b.next?b.next.due:"9999"), amount:(a,b)=>b.amount-a.amount }[so];
   rows.sort(cmp);
   $("#lbody").innerHTML = rows.length ? rows.map(l=>{
     const pct = Math.round(l.paidAmt/l.total*100);
-    return `<tr class="click" data-id="${l.id}"><td class="muted">${faDigits(l.id)}</td><td><b>${esc(l.name)}</b></td><td>${esc(l.person)}</td><td>${esc(l.type)}</td><td>${fd(l.date)}</td>
+    return `<tr class="click" data-id="${l.id}"><td class="muted">${faDigits(l.id)}</td><td><b>${esc(l.person)}</b></td><td>${esc(l.bank)}</td><td>${rateTxt(l.rate)}</td><td>${faDigits(l.months)}</td><td>${fd(l.date)}</td>
       <td class="num">${fa(l.amount)}</td><td>${faDigits(l.paidN)} از ${faDigits(l.inst.length)}</td>
       <td><div class="row" style="flex-wrap:nowrap"><div class="prog" style="flex:1"><i style="width:${pct}%"></i></div><span class="muted" style="font-size:12px">${faDigits(pct)}٪</span></div></td>
       <td class="num">${l.remain? fa(l.remain) : '<span class="pill st-paid"><span class="dot"></span>تسویه</span>'}</td>
-      <td>${l.next? fd(l.next.due)+' <span class="muted">· '+fa(l.next.amt)+'</span>' : '—'}</td></tr>` + (openLoans.has(l.id)? detailRow(l) : "");
-  }).join("") : `<tr><td colspan="10" class="empty">وامی پیدا نشد.</td></tr>`;
+      <td>${l.next? fd(l.next.due) : '—'}</td><td class="num">${l.next? fa(l.next.amt) : '—'}</td></tr>` + (openLoans.has(l.id)? detailRow(l) : "");
+  }).join("") : `<tr><td colspan="12" class="empty">وامی پیدا نشد.</td></tr>`;
   const sum=f=>rows.reduce((s,l)=>s+f(l),0);
-  $("#lfoot").innerHTML = `<tr><td></td><td>جمع ${faDigits(rows.length)} وام</td><td></td><td></td><td></td><td class="num">${fa(sum(l=>l.amount))}</td><td>${faDigits(sum(l=>l.paidN))} از ${faDigits(sum(l=>l.inst.length))}</td><td></td><td class="num">${fa(sum(l=>l.remain))}</td><td></td></tr>`;
+  $("#lfoot").innerHTML = `<tr><td></td><td>جمع ${faDigits(rows.length)} وام</td><td></td><td></td><td></td><td></td><td class="num">${fa(sum(l=>l.amount))}</td><td>${faDigits(sum(l=>l.paidN))} از ${faDigits(sum(l=>l.inst.length))}</td><td></td><td class="num">${fa(sum(l=>l.remain))}</td><td></td><td class="num">${fa(sum(l=>l.next?l.next.amt:0))}</td></tr>`;
   $$("#lbody tr.click").forEach(tr => tr.onclick = () => { const id=+tr.dataset.id; openLoans.has(id)?openLoans.delete(id):openLoans.add(id); renderLoans(); });
   $$("#lbody .personSel").forEach(sel => sel.onchange = () => {
     const id=+sel.dataset.id, l=LOANS.find(x=>x.id===id);
     if(sel.value==="__new"){ sel.nextElementSibling.classList.remove("hidden"); sel.nextElementSibling.querySelector("input").focus(); return; }
-    doOp({t:"person", id, v:sel.value}, `«${l.name}» به ${sel.value} منتقل شد`, {t:"person", id, v:l.person});
+    doOp({t:"person", id, v:sel.value}, `وام ${l.bank} ${fd(l.date)} به نام ${sel.value} شد`, {t:"person", id, v:l.person});
   });
   $$("#lbody .newPerson").forEach(f => f.onsubmit = ev => { ev.preventDefault();
     const v=f.querySelector("input").value.trim(), id=+f.dataset.id, l=LOANS.find(x=>x.id===id); if(!v) return;
-    doOp({t:"person", id, v}, `«${l.name}» به ${v} منتقل شد`, {t:"person", id, v:l.person}); });
+    doOp({t:"person", id, v}, `وام ${l.bank} ${fd(l.date)} به نام ${v} شد`, {t:"person", id, v:l.person}); });
 }
 function detailRow(l){
   const opts = DATA.persons.map(p=>`<option ${p===l.person?"selected":""}>${esc(p)}</option>`).join("") + `<option value="__new">+ نفر جدید…</option>`;
-  const extra = l.rate ? ` · سود ${faDigits(l.rate)}٪` : "";
+  const orig = l.origName ? ` · نام در سایت قبلی: «${esc(l.origName)}»` : "";
   const merged = l.mergedFrom ? `<div class="muted" style="font-size:12px;margin-top:4px">این وام در سایت قبلی به شکل «${l.mergedFrom.map(esc).join("» و «")}» ثبت شده بود و اینجا یکی شده.</div>` : "";
-  return `<tr class="detail"><td colspan="10">
-    <div class="row" style="margin-bottom:8px"><span>${esc(l.type)}${extra} · مدت ${faDigits(l.months)} ماه · جمع بازپرداخت ${fa(l.total)} تومان</span><span class="spacer"></span>
-      <span class="row" style="gap:6px">نفر: <select class="inp personSel" data-id="${l.id}">${opts}</select>
+  return `<tr class="detail"><td colspan="12">
+    <div class="row" style="margin-bottom:8px"><span>بانک ${esc(l.bank)} · سود ${rateTxt(l.rate)} · ${faDigits(l.months)} ماه · جمع بازپرداخت ${fa(l.total)} تومان<span class="muted">${orig}</span></span><span class="spacer"></span>
+      <span class="row" style="gap:6px">نام: <select class="inp personSel" data-id="${l.id}">${opts}</select>
       <form class="newPerson row hidden" data-id="${l.id}" style="gap:6px"><input class="inp" placeholder="نام نفر جدید"><button class="btn small">ثبت</button></form></span></div>
     ${merged}
     <div class="tw" style="margin-top:8px"><table><thead><tr><th>قسط</th><th>تاریخ سررسید</th><th class="num">مبلغ (تومان)</th><th>وضعیت</th><th>تاریخ ثبت پرداخت</th></tr></thead><tbody>${
@@ -650,7 +651,7 @@ function renderInst(){
   const rows = INST.filter(i => (!m || ym(i.due)===m) && (!pp || i.loan.person===pp) && (!lid || i.loan.id==lid) &&
     (!st || (st==="paid"&&i.paid) || (st==="unpaid"&&!i.paid) || (st==="late"&&instStatus(i)==="late")));
   const MAX=400, shown=rows.slice(0,MAX);
-  $("#ibody").innerHTML = shown.length ? shown.map(i=>`<tr><td>${fd(i.due)}</td><td>${esc(i.loan.name)}</td><td>${esc(i.loan.person)}</td><td>${faDigits(i.n)} از ${faDigits(i.loan.inst.length)}</td><td class="num">${fa(i.amt)}</td><td>${payBtn(i)}</td></tr>`).join("")
+  $("#ibody").innerHTML = shown.length ? shown.map(i=>`<tr><td>${fd(i.due)}</td><td>${esc(i.loan.person)}</td><td>${esc(i.loan.bank)} <span class="muted">${rateTxt(i.loan.rate)}</span></td><td>${faDigits(i.n)} از ${faDigits(i.loan.inst.length)}</td><td class="num">${fa(i.amt)}</td><td>${payBtn(i)}</td></tr>`).join("")
     + (rows.length>MAX? `<tr><td colspan="6" class="empty">${faDigits(rows.length-MAX)} ردیف دیگر — با فیلتر ماه یا وام محدودتر کن.</td></tr>`:"")
     : `<tr><td colspan="6" class="empty">قسطی با این فیلتر نیست.</td></tr>`;
   const sum = a => a.reduce((s,i)=>s+i.amt,0), un = rows.filter(i=>!i.paid);
