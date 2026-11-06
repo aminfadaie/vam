@@ -141,7 +141,22 @@ button.pill:hover{border-color:var(--text-2)}
 ol.steps{margin:6px 0 10px;padding-right:20px;font-size:14px;color:var(--text-2)}
 code{background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:0 5px;direction:ltr;display:inline-block}
 
-#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 14px;border-radius:10px;font-size:14px;display:flex;gap:14px;align-items:center;z-index:20;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:92vw}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:grid;place-items:center;z-index:30;padding:16px}
+.mbox{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:440px;max-height:92vh;overflow:auto}
+.mbox h2{font-size:17px;margin:0 0 2px}
+.mbox .sub{font-size:13px;color:var(--text-2);margin:0 0 14px}
+.field{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.field .l{font-size:12px;color:var(--text-2);margin-bottom:2px}
+.field .v{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.field .v.ltr{direction:ltr;justify-content:flex-end;font-size:16px;letter-spacing:.5px}
+.copy{border:1px solid var(--border);background:var(--surface);border-radius:7px;padding:2px 10px;font-size:12px;cursor:pointer;font-weight:500;letter-spacing:0}
+.mactions{display:flex;gap:8px;margin-top:14px}
+.mactions .btn{flex:1}
+.btn.paid{background:var(--good)}
+.shebaForm{display:grid;gap:6px;margin-top:4px}
+.shebaForm input{padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);direction:ltr;width:100%}
+.linkbtn{background:none;border:0;color:var(--accent);cursor:pointer;font-size:13px;padding:0;text-decoration:underline}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);width:max-content;background:var(--text);color:var(--bg);padding:9px 14px;border-radius:10px;font-size:14px;display:flex;gap:14px;align-items:center;z-index:20;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:92vw}
 #toast button{background:transparent;border:0;color:var(--bg);text-decoration:underline;cursor:pointer;font-weight:600}
 </style>
 </head>
@@ -236,7 +251,7 @@ code{background:var(--surface-2);border:1px solid var(--border);border-radius:5p
             <option value="paid">پرداخت‌شده</option><option value="late">سررسید گذشته و پرداخت‌نشده</option>
           </select>
         </div>
-        <p class="sub">برای ثبت پرداخت، روی وضعیت قسط بزن.</p>
+        <p class="sub">برای پرداخت، روی وضعیت قسط بزن؛ مبلغ و شماره شبا نمایش داده می‌شود.</p>
         <div class="tw"><table>
           <thead><tr><th>تاریخ سررسید</th><th>نام</th><th>بانک</th><th>قسط</th><th class="num">مبلغ (تومان)</th><th>وضعیت</th></tr></thead>
           <tbody id="ibody"></tbody><tfoot id="ifoot"></tfoot>
@@ -278,6 +293,7 @@ code{background:var(--surface-2);border:1px solid var(--border);border-radius:5p
   </main>
 </div>
 <div id="toast" class="hidden"></div>
+<div id="modal" class="hidden"><div class="mbox" id="mbox"></div></div>
 
 <script>
 // ===== config =====
@@ -356,6 +372,7 @@ async function loadPayload(){
 function applyOp(d, op){
   const l = d.loans.find(x => x.id===op.id); if(!l) return;
   if(op.t==="paid"){ const x = l.inst.find(i => i[0]===op.n); if(x){ x[3]=op.v?1:0; x[4]=op.v?op.on:null; } }
+  if(op.t==="sheba"){ l.sheba=op.v||null; l.holder=op.h||null; }
   if(op.t==="person"){ l.person=op.v; if(!d.persons.includes(op.v)) d.persons.push(op.v); }
 }
 async function savePending(){
@@ -466,7 +483,7 @@ document.addEventListener("click", ev => {
   const id=+b.dataset.id, n=+b.dataset.n, l=LOANS.find(x=>x.id===id), i=l.inst.find(x=>x.n===n);
   const prev = {t:"paid", id, n, v:i.paid?1:0, on:i.on||null};
   if(i.paid) doOp({t:"paid", id, n, v:0, on:null}, `قسط ${faDigits(n)} ${l.person} (${l.bank}) پرداخت‌نشده شد`, prev);
-  else doOp({t:"paid", id, n, v:1, on:TODAY}, `قسط ${faDigits(n)} ${l.person} (${l.bank}) پرداخت‌شده ثبت شد`, prev);
+  else openPay(id, n);
 }, true);
 
 let toastTimer=null;
@@ -474,6 +491,81 @@ function toast(msg, undo){
   const t=$("#toast"); t.innerHTML=`<span>${esc(msg)}</span>`;
   if(undo){ const b=document.createElement("button"); b.textContent="برگرداندن"; b.onclick=()=>{ t.classList.add("hidden"); undo(); }; t.appendChild(b); }
   t.classList.remove("hidden"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add("hidden"), 5000);
+}
+
+// ===== sheba & payment dialog =====
+const toLatin = s => String(s).replace(/[۰-۹]/g, d => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+function normSheba(s){
+  let x = toLatin(s).toUpperCase().replace(/[^0-9A-Z]/g,"");
+  if(/^\d{24}$/.test(x)) x = "IR"+x;
+  return x;
+}
+function validSheba(x){
+  if(!/^IR\d{24}$/.test(x)) return false;
+  const r = (x.slice(4) + "1827" + x.slice(2,4));   // I=18, R=27
+  let m = 0; for(const ch of r) m = (m*10 + +ch) % 97;
+  return m === 1;
+}
+const fmtSheba = x => x.replace(/(.{4})/g,"$1 ").trim();
+async function copyText(t, btn){
+  try{ await navigator.clipboard.writeText(t); }
+  catch(e){ const ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch(_){} ta.remove(); }
+  if(btn){ const o=btn.textContent; btn.textContent="کپی شد ✓"; setTimeout(()=>btn.textContent=o, 1500); }
+}
+const modal = $("#modal"), mbox = $("#mbox");
+function closeModal(){ modal.classList.add("hidden"); mbox.innerHTML=""; }
+modal.addEventListener("click", ev => { if(ev.target===modal) closeModal(); });
+document.addEventListener("keydown", ev => { if(ev.key==="Escape" && !modal.classList.contains("hidden")) closeModal(); });
+
+function shebaFormHtml(l){
+  return `<form class="shebaForm" id="shebaForm">
+    <input id="shebaIn" placeholder="IR00 0000 0000 0000 0000 0000 00" value="${l.sheba? fmtSheba(l.sheba):""}" inputmode="text" autocomplete="off">
+    <input id="holderIn" placeholder="نام صاحب حساب (اختیاری)" value="${esc(l.holder||"")}" style="direction:rtl">
+    <div class="row"><button class="btn small" type="submit">ذخیره شبا</button>${l.sheba? '<button class="btn small secondary" type="button" id="shebaDel">حذف شبا</button>':""}</div>
+    <div class="err" id="shebaErr"></div></form>`;
+}
+function bindShebaForm(l, after){
+  $("#shebaForm").onsubmit = async ev => { ev.preventDefault();
+    const v = normSheba($("#shebaIn").value), h = $("#holderIn").value.trim();
+    if(!validSheba(v)){ $("#shebaErr").textContent = "شماره شبا درست نیست. باید با IR شروع شود و ۲۴ رقم داشته باشد."; return; }
+    await doOp({t:"sheba", id:l.id, v, h}, `شبای وام ${l.person} (${l.bank}) ذخیره شد`, {t:"sheba", id:l.id, v:l.sheba||null, h:l.holder||null});
+    after();
+  };
+  const del = $("#shebaDel"); if(del) del.onclick = async () => { await doOp({t:"sheba", id:l.id, v:null, h:null}, `شبای وام ${l.person} حذف شد`, {t:"sheba", id:l.id, v:l.sheba, h:l.holder}); after(); };
+}
+function openSheba(id){
+  const l = LOANS.find(x=>x.id===id);
+  mbox.innerHTML = `<h2>شبای پرداخت قسط</h2><p class="sub">${esc(l.person)} · ${esc(l.bank)} · دریافت ${fd(l.date)}</p>${shebaFormHtml(l)}
+    <div class="mactions"><button class="btn secondary" id="mClose">بستن</button></div>`;
+  modal.classList.remove("hidden"); $("#mClose").onclick = closeModal;
+  bindShebaForm(l, closeModal); $("#shebaIn").focus();
+}
+function openPay(id, n, editing){
+  const l = LOANS.find(x=>x.id===id), i = l.inst.find(x=>x.n===n);
+  if(!l || !i || i.paid) return;
+  const toman = Math.round(i.amt), rial = toman*10;
+  const shebaBlock = (l.sheba && !editing)
+    ? `<div class="field"><div class="l">به این شماره شبا واریز کن${l.holder? ` — به نام ${esc(l.holder)}`:""}</div>
+         <div class="v ltr"><button class="copy" id="cpSheba">کپی</button><span>${fmtSheba(l.sheba)}</span></div>
+         <button class="linkbtn" id="editSh">ویرایش شبا</button></div>`
+    : `<div class="field"><div class="l">${l.sheba? "ویرایش شماره شبا" : "برای این وام هنوز شماره شبا ثبت نشده. اگر می‌خواهی، الان ثبتش کن:"}</div>${shebaFormHtml(l)}</div>`;
+  mbox.innerHTML = `<h2>پرداخت قسط ${faDigits(n)} از ${faDigits(l.inst.length)}</h2>
+    <p class="sub">${esc(l.person)} · ${esc(l.bank)} · سررسید ${fd(i.due)}${i.due<TODAY? ' · <b style="color:var(--critical)">سررسید گذشته</b>':""}</p>
+    <div class="field"><div class="l">مبلغ قابل پرداخت</div>
+      <div class="v"><span>${fa(toman)} تومان</span><button class="copy" id="cpToman">کپی تومان</button></div>
+      <div class="row muted" style="font-size:13px;margin-top:2px">= ${fa(rial)} ریال <button class="copy" id="cpRial">کپی ریال</button></div></div>
+    ${shebaBlock}
+    <p class="sub" style="margin:4px 0 0">بعد از اینکه پول را واریز کردی، «پرداخت شد» را بزن تا این قسط پرداخت‌شده ثبت شود.</p>
+    <div class="mactions"><button class="btn paid" id="mPaid">✓ پرداخت شد</button><button class="btn secondary" id="mCancel">انصراف</button></div>`;
+  modal.classList.remove("hidden");
+  $("#cpToman").onclick = e => copyText(String(toman), e.target);
+  $("#cpRial").onclick = e => copyText(String(rial), e.target);
+  if($("#cpSheba")) $("#cpSheba").onclick = e => copyText(l.sheba, e.target);
+  if($("#editSh")) $("#editSh").onclick = () => openPay(id, n, true);
+  if($("#shebaForm")) bindShebaForm(l, () => openPay(id, n));
+  $("#mCancel").onclick = closeModal;
+  $("#mPaid").onclick = () => { closeModal();
+    doOp({t:"paid", id, n, v:1, on:TODAY}, `قسط ${faDigits(n)} ${l.person} (${l.bank}) پرداخت‌شده ثبت شد`, {t:"paid", id, n, v:0, on:null}); };
 }
 
 // ===== navigation =====
@@ -626,6 +718,7 @@ function renderLoans(){
     if(sel.value==="__new"){ sel.nextElementSibling.classList.remove("hidden"); sel.nextElementSibling.querySelector("input").focus(); return; }
     doOp({t:"person", id, v:sel.value}, `وام ${l.bank} ${fd(l.date)} به نام ${sel.value} شد`, {t:"person", id, v:l.person});
   });
+  $$("#lbody .editSheba").forEach(x => x.onclick = ev => { ev.stopPropagation(); openSheba(+x.dataset.id); });
   $$("#lbody .newPerson").forEach(f => f.onsubmit = ev => { ev.preventDefault();
     const v=f.querySelector("input").value.trim(), id=+f.dataset.id, l=LOANS.find(x=>x.id===id); if(!v) return;
     doOp({t:"person", id, v}, `وام ${l.bank} ${fd(l.date)} به نام ${v} شد`, {t:"person", id, v:l.person}); });
@@ -639,6 +732,8 @@ function detailRow(l){
       <span class="row" style="gap:6px">نام: <select class="inp personSel" data-id="${l.id}">${opts}</select>
       <form class="newPerson row hidden" data-id="${l.id}" style="gap:6px"><input class="inp" placeholder="نام نفر جدید"><button class="btn small">ثبت</button></form></span></div>
     ${merged}
+    <div class="row" style="margin-top:8px;gap:6px">شبای پرداخت قسط: ${l.sheba ? `<b style="direction:ltr;display:inline-block">${fmtSheba(l.sheba)}</b>${l.holder? ` <span class="muted">(${esc(l.holder)})</span>`:""}` : '<span class="muted">ثبت نشده</span>'}
+      <button class="linkbtn editSheba" data-id="${l.id}">${l.sheba? "ویرایش" : "ثبت شبا"}</button></div>
     <div class="tw" style="margin-top:8px"><table><thead><tr><th>قسط</th><th>تاریخ سررسید</th><th class="num">مبلغ (تومان)</th><th>وضعیت</th><th>تاریخ ثبت پرداخت</th></tr></thead><tbody>${
     l.inst.map(i=>`<tr><td>${faDigits(i.n)}</td><td>${fd(i.due)}</td><td class="num">${fa(i.amt)}</td><td>${payBtn(i)}</td><td class="muted">${i.on? fd(i.on) : ""}</td></tr>`).join("")}</tbody></table></div></td></tr>`;
 }
