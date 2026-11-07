@@ -974,10 +974,9 @@ function renderLoans(){
 }
 function detailRow(l){
   const opts = DATA.persons.map(p=>`<option ${p===l.person?"selected":""}>${esc(p)}</option>`).join("") + `<option value="__new">+ نفر جدید…</option>`;
-  const orig = l.origName ? ` · نام در سایت قبلی: «${esc(l.origName)}»` : "";
   const merged = l.mergedFrom ? `<div class="muted" style="font-size:12px;margin-top:4px">این وام در سایت قبلی به شکل «${l.mergedFrom.map(esc).join("» و «")}» ثبت شده بود و اینجا یکی شده.</div>` : "";
   return `<tr class="detail"><td colspan="12">
-    <div class="row" style="margin-bottom:8px"><span>بانک ${esc(l.bank)} · سود ${rateTxt(l.rate)} · ${faDigits(l.months)} ماه · جمع بازپرداخت ${fa(l.total)} تومان<span class="muted">${orig}</span></span><span class="spacer"></span>
+    <div class="row" style="margin-bottom:8px"><span>بانک ${esc(l.bank)} · سود ${rateTxt(l.rate)} · ${faDigits(l.months)} ماه · جمع بازپرداخت ${fa(l.total)} تومان</span><span class="spacer"></span>
       <span class="row" style="gap:6px">نام: <select class="inp personSel" data-id="${l.id}">${opts}</select>
       <form class="newPerson row hidden" data-id="${l.id}" style="gap:6px"><input class="inp" placeholder="نام نفر جدید"><button class="btn small">ثبت</button></form></span></div>
     ${merged}
