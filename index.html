@@ -180,6 +180,14 @@ code{background:var(--surface-2);border:1px solid var(--border);border-radius:5p
 .steps2{margin:4px 0 0;padding-right:20px;font-size:13px;color:var(--text-2);line-height:1.9}
 .steps2 b{color:var(--text)}
 details.howto summary{cursor:pointer;font-size:13px;color:var(--accent);margin-top:4px}
+.missing-box{background:color-mix(in srgb, var(--critical) 9%, var(--surface));border:1.5px solid var(--critical);border-radius:12px;padding:10px 14px;margin-bottom:14px}
+.missing-box h3{margin:0 0 6px;font-size:15px;color:var(--critical)}
+.missing-box .mi{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid color-mix(in srgb, var(--critical) 25%, transparent);font-size:14px;flex-wrap:wrap}
+.missing-box .mi:first-of-type{border-top:0}
+.missing-box .mi .need{color:var(--critical);font-size:13px}
+.btn.red{background:var(--critical)}
+tr.missing>td:first-child{box-shadow:inset -4px 0 0 var(--critical)}
+.redtag{font-size:11px;color:var(--critical);border:1px solid currentColor;border-radius:6px;padding:0 6px;margin-right:6px;white-space:nowrap}
 .bulk{display:flex;gap:6px;align-items:flex-start;font-size:13px;color:var(--text-2)}
 #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);width:max-content;background:var(--text);color:var(--bg);padding:9px 14px;border-radius:10px;font-size:14px;display:flex;gap:14px;align-items:center;z-index:20;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:92vw}
 #toast button{background:transparent;border:0;color:var(--bg);text-decoration:underline;cursor:pointer;font-weight:600}
@@ -218,6 +226,7 @@ details.howto summary{cursor:pointer;font-size:13px;color:var(--accent);margin-t
   <main>
 
     <section id="v-summary">
+      <div id="missingNote"></div>
       <div class="grid kpis" id="kpis"></div>
       <div class="grid two">
         <div class="card">
@@ -244,6 +253,7 @@ details.howto summary{cursor:pointer;font-size:13px;color:var(--accent);margin-t
     <section id="v-loans" class="hidden">
       <div class="card">
         <div class="row" style="margin-bottom:12px"><h2 style="margin:0">وام‌ها</h2><span class="spacer"></span><button class="btn" id="addLoanBtn">+ وام جدید</button></div>
+        <div id="missingBox"></div>
         <div class="filters">
           <input id="lq" placeholder="جستجو (نام یا بانک)">
           <select id="lperson"></select>
@@ -594,6 +604,8 @@ function openSheba(id){
 }
 // ===== Melli facility number =====
 const isMelli = b => /ملی/.test(b||"");
+const needsInfo = l => l.status!=="done" && (isMelli(l.bank) ? !l.facility : !l.sheba);
+const needLabel = l => isMelli(l.bank) ? "شماره تسهیلات" : "شماره شبا";
 const normFacility = s => toLatin(s).replace(/[^0-9]/g,"");
 const validFacility = x => /^\d{6,25}$/.test(x);
 function facilityFormHtml(l){
@@ -639,10 +651,9 @@ function openPay(id, n, editing, editingFac){
          <button class="linkbtn" id="editFac">ویرایش شماره تسهیلات</button></div>`
     : `<div class="field"><div class="l">${l.facility? "ویرایش شماره تسهیلات" : "شماره تسهیلات این وام هنوز ثبت نشده؛ ثبتش کن تا هر بار اینجا آماده‌ی کپی باشد:"}</div>${facilityFormHtml(l)}</div>`;
   const body = melli
-    ? `<div class="method"><div class="mt">روش ۱: پرداخت از اپ بام بانک ملی <span class="badge">بدون انتقال به شبا</span></div>
-         <p class="sub" style="margin:0 0 8px">می‌توانی این قسط را بدون انتقال پول به شبای وام‌گیرنده، مستقیم از اپلیکیشن بام بانک ملی پرداخت کنی.</p>
-         ${facBlock}${BAM_STEPS}</div>
-       <div class="method"><div class="mt">روش ۲: واریز به شماره شبا</div>${shebaBlock}</div>`
+    ? `<div class="method"><div class="mt">پرداخت از اپ بام بانک ملی</div>
+         <p class="sub" style="margin:0 0 8px">این قسط را بدون انتقال پول به شبای وام‌گیرنده، مستقیم از اپلیکیشن بام بانک ملی پرداخت کن.</p>
+         ${facBlock}${BAM_STEPS}</div>`
     : shebaBlock;
   mbox.innerHTML = `<h2>پرداخت قسط ${faDigits(n)} از ${faDigits(l.inst.length)}</h2>
     <p class="sub">${esc(l.person)} · ${esc(l.bank)} · سررسید ${fd(i.due)}${i.due<TODAY? ' · <b style="color:var(--critical)">سررسید گذشته</b>':""}</p>
@@ -696,9 +707,9 @@ function openAddLoan(){
     <label class="full">مبلغ وام (تومان)<input id="alAmount" inputmode="numeric" placeholder="مثلاً 200000000" class="ltr"><span class="hint" id="alAmountFa"></span></label>
     <label>تاریخ دریافت<input id="alDate" value="${fd(TODAY)}" class="ltr" placeholder="1405/08/16"></label>
     <label>تاریخ اولین قسط<input id="alFirst" value="${fd(addMonthsDate(TODAY,1))}" class="ltr"></label>
-    <label id="alFacWrap" class="full hidden">شماره تسهیلات بانک ملی (اختیاری)<input id="alFac" class="ltr" inputmode="numeric" placeholder="شماره تسهیلات"></label>
-    <label>شماره شبا (اختیاری)<input id="alSheba" class="ltr" placeholder="IR..."></label>
-    <label>صاحب حساب (اختیاری)<input id="alHolder"></label>
+    <label id="alFacWrap" class="full hidden">شماره تسهیلات بانک ملی <b style="color:var(--critical)">*</b><input id="alFac" class="ltr" inputmode="numeric" placeholder="شماره تسهیلات"></label>
+    <label class="alShebaWrap">شماره شبا <b style="color:var(--critical)">*</b><input id="alSheba" class="ltr" placeholder="IR..."></label>
+    <label class="alShebaWrap">صاحب حساب (اختیاری)<input id="alHolder"></label>
     <div class="full" id="alSugg" style="grid-column:1/-1"></div>
   </div>
   <div class="prev" id="alPrev"></div>
@@ -721,8 +732,9 @@ function openAddLoan(){
 }
 function updateAlSugg(){
   const f = readLoanForm(), box = $("#alSugg");
-  $("#alFacWrap").classList.toggle("hidden", !isMelli(f.bank));
-  if(!f.person || !f.bank){ box.innerHTML=""; return; }
+  const m = isMelli(f.bank);
+  $("#alFacWrap").classList.toggle("hidden", !m); $$(".alShebaWrap").forEach(x=>x.classList.toggle("hidden", m));
+  if(!f.person || !f.bank || m){ box.innerHTML=""; return; }
   const list = shebaSuggestions(f.person, f.bank, f.rate, null);
   box.innerHTML = suggHtml(list, f.person, f.bank, f.rate);
   $$("#alSugg .useSugg").forEach(b => b.onclick = () => { $("#alSheba").value = fmtSheba(b.dataset.s); if(b.dataset.h) $("#alHolder").value = b.dataset.h; });
@@ -768,9 +780,16 @@ async function saveNewLoan(ev){
   if(!alSchedule){ err.textContent="اطلاعات وام کامل نیست."; return; }
   const edited = $$("#alPrev input").map(i=>parseNum(i.value));
   if(edited.some(v=>!(v>=0))){ err.textContent="مبلغ یکی از اقساط درست نیست."; return; }
-  const facility = isMelli(f.bank) && f.facility ? f.facility : null;
-  if(facility && !validFacility(facility)){ err.textContent="شماره تسهیلات فقط باید عدد باشد (۶ تا ۲۵ رقم)."; return; }
-  let sheba=null; if(f.sheba){ sheba=normSheba(f.sheba); if(!validSheba(sheba)){ err.textContent="شماره شبا درست نیست."; return; } }
+  const melli = isMelli(f.bank);
+  let facility=null, sheba=null;
+  if(melli){
+    facility = f.facility || null;
+    if(!facility){ err.textContent="برای وام بانک ملی، شماره تسهیلات را وارد کن."; return; }
+    if(!validFacility(facility)){ err.textContent="شماره تسهیلات فقط باید عدد باشد (۶ تا ۲۵ رقم)."; return; }
+  } else {
+    if(!f.sheba){ err.textContent="شماره شبا را وارد کن؛ بدون آن وام ثبت نمی‌شود."; return; }
+    sheba=normSheba(f.sheba); if(!validSheba(sheba)){ err.textContent="شماره شبا درست نیست."; return; }
+  }
   const loan = {id: Date.now(), person:f.person, bank:f.bank, rate:f.rate, months:f.months, amount:f.amount, date:f.date,
     sheba, holder: sheba? (f.holder||null) : null, facility, added: TODAY,
     inst: alSchedule.map((x,k)=>[x[0], x[1], edited[k], 0, null])};
@@ -789,9 +808,22 @@ function show(v){
 }
 
 let monthOffset=0;
-function rerender(){ prepare(); renderSummary(); renderPeople(); refreshPersonSelects(); renderLoans(); renderInst(); }
+function rerender(){ prepare(); renderMissing(); renderSummary(); renderPeople(); refreshPersonSelects(); renderLoans(); renderInst(); }
 
 // ===== summary =====
+let missingAll=false;
+function renderMissing(){
+  const miss = LOANS.filter(needsInfo).sort((a,b)=>(a.next?a.next.due:"9").localeCompare(b.next?b.next.due:"9"));
+  $("#missingNote").innerHTML = miss.length ? `<div class="missing-box row"><b style="color:var(--critical)">⚠ ${faDigits(miss.length)} وام هنوز شماره شبا یا شماره تسهیلات ندارد.</b><span class="spacer"></span><button class="btn small red" id="goMissing">ثبت اطلاعات</button></div>` : "";
+  if($("#goMissing")) $("#goMissing").onclick = () => show("loans");
+  $("#missingBox").innerHTML = miss.length ? `<div class="missing-box"><h3>⚠ این وام‌ها باید ${miss.some(l=>!isMelli(l.bank))?"شماره شبا":""}${miss.some(l=>!isMelli(l.bank))&&miss.some(l=>isMelli(l.bank))?" یا ":""}${miss.some(l=>isMelli(l.bank))?"شماره تسهیلات":""} داشته باشند (${faDigits(miss.length)} وام)</h3>${
+    (missingAll? miss : miss.slice(0,5)).map(l=>`<div class="mi"><b>${esc(l.person)}</b><span>${esc(l.bank)} · ${rateTxt(l.rate)} · ${faDigits(l.months)} ماه · دریافت ${fd(l.date)}</span>
+      <span class="need">بدون ${needLabel(l)}</span><span class="spacer"></span>
+      <button class="btn small red fixMissing" data-id="${l.id}" data-k="${isMelli(l.bank)?"fac":"sheba"}">ثبت ${needLabel(l)}</button></div>`).join("")}
+    ${miss.length>5? `<div class="mi"><button class="linkbtn" id="missToggle">${missingAll? "نمایش کمتر" : `نمایش همه (${faDigits(miss.length)} وام)`}</button></div>`:""}</div>` : "";
+  if($("#missToggle")) $("#missToggle").onclick = () => { missingAll=!missingAll; renderMissing(); };
+  $$("#missingBox .fixMissing").forEach(b => b.onclick = () => b.dataset.k==="fac" ? openFacility(+b.dataset.id) : openSheba(+b.dataset.id));
+}
 function renderSummary(){
   const amount = LOANS.reduce((s,l)=>s+l.amount,0);
   const total = LOANS.reduce((s,l)=>s+l.total,0);
@@ -916,7 +948,7 @@ function renderLoans(){
   rows.sort(cmp);
   $("#lbody").innerHTML = rows.length ? rows.map((l,idx)=>{
     const pct = Math.round(l.paidAmt/l.total*100);
-    return `<tr class="click" data-id="${l.id}"><td class="muted">${faDigits(idx+1)}</td><td><b>${esc(l.person)}</b></td><td>${esc(l.bank)}</td><td>${rateTxt(l.rate)}</td><td>${faDigits(l.months)}</td><td>${fd(l.date)}</td>
+    return `<tr class="click${needsInfo(l)?" missing":""}" data-id="${l.id}"><td class="muted">${faDigits(idx+1)}</td><td><b>${esc(l.person)}</b>${needsInfo(l)? `<span class="redtag">بدون ${needLabel(l)}</span>`:""}</td><td>${esc(l.bank)}</td><td>${rateTxt(l.rate)}</td><td>${faDigits(l.months)}</td><td>${fd(l.date)}</td>
       <td class="num">${fa(l.amount)}</td><td>${faDigits(l.paidN)} از ${faDigits(l.inst.length)}</td>
       <td><div class="row" style="flex-wrap:nowrap"><div class="prog" style="flex:1"><i style="width:${pct}%"></i></div><span class="muted" style="font-size:12px">${faDigits(pct)}٪</span></div></td>
       <td class="num">${l.remain? fa(l.remain) : '<span class="pill st-paid"><span class="dot"></span>تسویه</span>'}</td>
@@ -949,11 +981,12 @@ function detailRow(l){
       <span class="row" style="gap:6px">نام: <select class="inp personSel" data-id="${l.id}">${opts}</select>
       <form class="newPerson row hidden" data-id="${l.id}" style="gap:6px"><input class="inp" placeholder="نام نفر جدید"><button class="btn small">ثبت</button></form></span></div>
     ${merged}
-    <div class="row" style="margin-top:8px;gap:6px">شبای پرداخت قسط: ${l.sheba ? `<b style="direction:ltr;display:inline-block">${fmtSheba(l.sheba)}</b>${l.holder? ` <span class="muted">(${esc(l.holder)})</span>`:""}` : '<span class="muted">ثبت نشده</span>'}
-      <button class="linkbtn editSheba" data-id="${l.id}">${l.sheba? "ویرایش" : "ثبت شبا"}</button>
+    <div class="row" style="margin-top:8px;gap:6px">${isMelli(l.bank)
+      ? `شماره تسهیلات: ${l.facility ? `<b style="direction:ltr;display:inline-block">${l.facility}</b>` : '<b style="color:var(--critical)">ثبت نشده</b>'}
+         <button class="linkbtn editFac" data-id="${l.id}">${l.facility? "ویرایش" : "ثبت شماره تسهیلات"}</button>`
+      : `شبای پرداخت قسط: ${l.sheba ? `<b style="direction:ltr;display:inline-block">${fmtSheba(l.sheba)}</b>${l.holder? ` <span class="muted">(${esc(l.holder)})</span>`:""}` : '<b style="color:var(--critical)">ثبت نشده</b>'}
+         <button class="linkbtn editSheba" data-id="${l.id}">${l.sheba? "ویرایش" : "ثبت شبا"}</button>`}
       <span class="spacer"></span><button class="btn small secondary delLoan" data-id="${l.id}">حذف این وام</button></div>
-    ${isMelli(l.bank) ? `<div class="row" style="margin-top:4px;gap:6px">شماره تسهیلات: ${l.facility ? `<b style="direction:ltr;display:inline-block">${l.facility}</b>` : '<span class="muted">ثبت نشده</span>'}
-      <button class="linkbtn editFac" data-id="${l.id}">${l.facility? "ویرایش" : "ثبت شماره تسهیلات"}</button></div>` : ""}
     <div class="tw" style="margin-top:8px"><table><thead><tr><th>قسط</th><th>تاریخ سررسید</th><th class="num">مبلغ (تومان)</th><th>وضعیت</th><th>تاریخ ثبت پرداخت</th></tr></thead><tbody>${
     l.inst.map(i=>`<tr><td>${faDigits(i.n)}</td><td>${fd(i.due)}</td><td class="num">${fa(i.amt)}</td><td>${payBtn(i)}</td><td class="muted">${i.on? fd(i.on) : ""}</td></tr>`).join("")}</tbody></table></div></td></tr>`;
 }
