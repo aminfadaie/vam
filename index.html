@@ -168,6 +168,12 @@ code{background:var(--surface-2);border:1px solid var(--border);border-radius:5p
 .prev input{width:130px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);text-align:left;direction:ltr;font-variant-numeric:tabular-nums}
 .prev .tw{max-height:300px;overflow:auto}
 .btn.danger{background:var(--critical)}
+.sugg{background:var(--surface);border:1px dashed var(--accent);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--text-2);display:grid;gap:6px}
+.sugg button{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:right;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px;color:var(--text)}
+.sugg button:hover{border-color:var(--accent)}
+.sugg .sv{direction:ltr;font-variant-numeric:tabular-nums;letter-spacing:.3px;white-space:nowrap}
+.sugg button{flex-wrap:wrap}
+.bulk{display:flex;gap:6px;align-items:flex-start;font-size:13px;color:var(--text-2)}
 #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);width:max-content;background:var(--text);color:var(--bg);padding:9px 14px;border-radius:10px;font-size:14px;display:flex;gap:14px;align-items:center;z-index:20;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:92vw}
 #toast button{background:transparent;border:0;color:var(--bg);text-decoration:underline;cursor:pointer;font-weight:600}
 </style>
@@ -398,7 +404,7 @@ async function loadPending(){
   try{ const o=JSON.parse(s); if(o.salt!==PAYLOAD.salt) return []; return JSON.parse(await decStr(KEY,o)); }catch(e){ return []; }
 }
 async function doOp(op, msg, undoOp){
-  applyOp(DATA, op); PENDING.push(op); await savePending();
+  (Array.isArray(op)?op:[op]).forEach(o => { applyOp(DATA, o); PENDING.push(o); }); await savePending();
   rerender(); toast(msg, undoOp ? () => doOp(undoOp, "برگردانده شد") : null);
   scheduleFlush();
 }
@@ -530,10 +536,31 @@ function closeModal(){ modal.classList.add("hidden"); mbox.innerHTML=""; mbox.cl
 modal.addEventListener("click", ev => { if(ev.target===modal) closeModal(); });
 document.addEventListener("keydown", ev => { if(ev.key==="Escape" && !modal.classList.contains("hidden")) closeModal(); });
 
+// suggest Sheba numbers already saved for the same borrower + bank (+ rate)
+function shebaSuggestions(person, bank, rate, excludeId){
+  const out = new Map();
+  DATA.loans.forEach(x => {
+    if(!x.sheba || x.id===excludeId || x.person!==person || x.bank!==bank) return;
+    const exact = (+x.rate||0) === (+rate||0);
+    const o = out.get(x.sheba) || {sheba:x.sheba, holder:x.holder||"", exact:false, n:0, rates:new Set()};
+    o.exact = o.exact || exact; o.n++; o.rates.add(+x.rate||0); if(!o.holder && x.holder) o.holder=x.holder;
+    out.set(x.sheba, o);
+  });
+  return [...out.values()].sort((a,b)=> (b.exact-a.exact) || (b.n-a.n));
+}
+function suggHtml(list, person, bank, rate){
+  if(!list.length) return "";
+  return `<div class="sugg"><div>💡 شبای ذخیره‌شده برای ${esc(person)} · ${esc(bank)}:</div>${list.map(o=>`<button type="button" class="useSugg" data-s="${o.sheba}" data-h="${esc(o.holder)}">
+    <span class="sv">${fmtSheba(o.sheba)}</span><span class="muted">${o.holder? esc(o.holder)+" · ":""}${o.exact? `همین سود (${rateTxt(rate)})` : `سود ${[...o.rates].map(rateTxt).join("، ")}`} · ${faDigits(o.n)} وام — استفاده</span></button>`).join("")}</div>`;
+}
+const similarNoSheba = l => DATA.loans.filter(x => x.id!==l.id && !x.sheba && x.person===l.person && x.bank===l.bank && (+x.rate||0)===(+l.rate||0));
 function shebaFormHtml(l){
-  return `<form class="shebaForm" id="shebaForm">
+  const sg = shebaSuggestions(l.person, l.bank, l.rate, l.id).filter(o => o.sheba!==l.sheba);
+  const sim = similarNoSheba(l);
+  return `<form class="shebaForm" id="shebaForm">${suggHtml(sg, l.person, l.bank, l.rate)}
     <input id="shebaIn" placeholder="IR00 0000 0000 0000 0000 0000 00" value="${l.sheba? fmtSheba(l.sheba):""}" inputmode="text" autocomplete="off">
     <input id="holderIn" placeholder="نام صاحب حساب (اختیاری)" value="${esc(l.holder||"")}" style="direction:rtl">
+    ${sim.length ? `<label class="bulk"><input type="checkbox" id="shebaBulk" checked> برای ${faDigits(sim.length)} وام دیگرِ ${esc(l.person)} · ${esc(l.bank)} · ${rateTxt(l.rate)} که شبا ندارند هم ثبت شود</label>` : ""}
     <div class="row"><button class="btn small" type="submit">ذخیره شبا</button>${l.sheba? '<button class="btn small secondary" type="button" id="shebaDel">حذف شبا</button>':""}</div>
     <div class="err" id="shebaErr"></div></form>`;
 }
@@ -541,9 +568,13 @@ function bindShebaForm(l, after){
   $("#shebaForm").onsubmit = async ev => { ev.preventDefault();
     const v = normSheba($("#shebaIn").value), h = $("#holderIn").value.trim();
     if(!validSheba(v)){ $("#shebaErr").textContent = "شماره شبا درست نیست. باید با IR شروع شود و ۲۴ رقم داشته باشد."; return; }
-    await doOp({t:"sheba", id:l.id, v, h}, `شبای وام ${l.person} (${l.bank}) ذخیره شد`, {t:"sheba", id:l.id, v:l.sheba||null, h:l.holder||null});
+    const others = ($("#shebaBulk") && $("#shebaBulk").checked) ? similarNoSheba(l) : [];
+    const ops = [{t:"sheba", id:l.id, v, h}, ...others.map(x=>({t:"sheba", id:x.id, v, h}))];
+    const undo = [{t:"sheba", id:l.id, v:l.sheba||null, h:l.holder||null}, ...others.map(x=>({t:"sheba", id:x.id, v:null, h:null}))];
+    await doOp(ops, others.length ? `شبا برای ${faDigits(ops.length)} وام ${l.person} (${l.bank}) ذخیره شد` : `شبای وام ${l.person} (${l.bank}) ذخیره شد`, undo);
     after();
   };
+  $$("#shebaForm .useSugg").forEach(b => b.onclick = () => { $("#shebaIn").value = fmtSheba(b.dataset.s); if(b.dataset.h) $("#holderIn").value = b.dataset.h; $("#shebaErr").textContent=""; });
   const del = $("#shebaDel"); if(del) del.onclick = async () => { await doOp({t:"sheba", id:l.id, v:null, h:null}, `شبای وام ${l.person} حذف شد`, {t:"sheba", id:l.id, v:l.sheba, h:l.holder}); after(); };
 }
 function openSheba(id){
@@ -613,6 +644,7 @@ function openAddLoan(){
     <label>تاریخ اولین قسط<input id="alFirst" value="${fd(addMonthsDate(TODAY,1))}" class="ltr"></label>
     <label>شماره شبا (اختیاری)<input id="alSheba" class="ltr" placeholder="IR..."></label>
     <label>صاحب حساب (اختیاری)<input id="alHolder"></label>
+    <div class="full" id="alSugg" style="grid-column:1/-1"></div>
   </div>
   <div class="prev" id="alPrev"></div>
   <div class="err" id="alErr"></div>
@@ -625,9 +657,19 @@ function openAddLoan(){
   $("#alFirst").addEventListener("input", ()=>{ firstTouched=true; calcPreview(); });
   $("#alDate").addEventListener("input", ()=>{ const d=parseJ($("#alDate").value); if(d && !firstTouched) $("#alFirst").value=fd(addMonthsDate(d,1)); calcPreview(); });
   ["alMonths","alAmount","alRateNew"].forEach(id => $("#"+id).addEventListener("input", calcPreview));
+  ["alPerson","alBank","alRate","alPersonNew","alBankNew","alRateNew"].forEach(id => $("#"+id).addEventListener("input", updateAlSugg));
+  ["alPerson","alBank","alRate"].forEach(id => $("#"+id).addEventListener("change", updateAlSugg));
+  updateAlSugg();
   $("#alCancel").onclick = () => { mbox.classList.remove("wide"); closeModal(); };
   $("#alForm").onsubmit = saveNewLoan;
   $("#alMonths").focus(); calcPreview();
+}
+function updateAlSugg(){
+  const f = readLoanForm(), box = $("#alSugg");
+  if(!f.person || !f.bank){ box.innerHTML=""; return; }
+  const list = shebaSuggestions(f.person, f.bank, f.rate, null);
+  box.innerHTML = suggHtml(list, f.person, f.bank, f.rate);
+  $$("#alSugg .useSugg").forEach(b => b.onclick = () => { $("#alSheba").value = fmtSheba(b.dataset.s); if(b.dataset.h) $("#alHolder").value = b.dataset.h; });
 }
 function readLoanForm(){
   const pick = id => $("#"+id).value==="__new" ? $("#"+id+"New").value.trim() : $("#"+id).value;
