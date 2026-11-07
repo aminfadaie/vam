@@ -156,6 +156,18 @@ code{background:var(--surface-2);border:1px solid var(--border);border-radius:5p
 .shebaForm{display:grid;gap:6px;margin-top:4px}
 .shebaForm input{padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);direction:ltr;width:100%}
 .linkbtn{background:none;border:0;color:var(--accent);cursor:pointer;font-size:13px;padding:0;text-decoration:underline}
+.mbox.wide{max-width:600px}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+@media (max-width:520px){.fgrid{grid-template-columns:1fr}}
+.fgrid label{display:grid;gap:3px;font-size:13px;color:var(--text-2);align-content:start}
+.fgrid label.full{grid-column:1/-1}
+.fgrid input,.fgrid select{padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);width:100%}
+.fgrid .ltr{direction:ltr;text-align:left}
+.hint{font-size:12px;color:var(--muted);min-height:18px}
+.prev{margin-top:12px}
+.prev input{width:130px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);text-align:left;direction:ltr;font-variant-numeric:tabular-nums}
+.prev .tw{max-height:300px;overflow:auto}
+.btn.danger{background:var(--critical)}
 #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);width:max-content;background:var(--text);color:var(--bg);padding:9px 14px;border-radius:10px;font-size:14px;display:flex;gap:14px;align-items:center;z-index:20;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:92vw}
 #toast button{background:transparent;border:0;color:var(--bg);text-decoration:underline;cursor:pointer;font-weight:600}
 </style>
@@ -191,7 +203,6 @@ code{background:var(--surface-2);border:1px solid var(--border);border-radius:5p
     </div>
   </header>
   <main>
-    <div class="note" id="topNote"></div>
 
     <section id="v-summary">
       <div class="grid kpis" id="kpis"></div>
@@ -219,6 +230,7 @@ code{background:var(--surface-2);border:1px solid var(--border);border-radius:5p
 
     <section id="v-loans" class="hidden">
       <div class="card">
+        <div class="row" style="margin-bottom:12px"><h2 style="margin:0">وام‌ها</h2><span class="spacer"></span><button class="btn" id="addLoanBtn">+ وام جدید</button></div>
         <div class="filters">
           <input id="lq" placeholder="جستجو (نام یا بانک)">
           <select id="lperson"></select>
@@ -370,6 +382,8 @@ async function loadPayload(){
 
 // ===== ops =====
 function applyOp(d, op){
+  if(op.t==="addLoan"){ if(!d.loans.some(x=>x.id===op.loan.id)){ d.loans.push(JSON.parse(JSON.stringify(op.loan))); if(!d.persons.includes(op.loan.person)) d.persons.push(op.loan.person); } return; }
+  if(op.t==="delLoan"){ d.loans = d.loans.filter(x=>x.id!==op.id); return; }
   const l = d.loans.find(x => x.id===op.id); if(!l) return;
   if(op.t==="paid"){ const x = l.inst.find(i => i[0]===op.n); if(x){ x[3]=op.v?1:0; x[4]=op.v?op.on:null; } }
   if(op.t==="sheba"){ l.sheba=op.v||null; l.holder=op.h||null; }
@@ -450,8 +464,7 @@ async function start(){
   const t = lsGet(LS.token);
   if(t){ try{ const o=JSON.parse(t); if(o.salt===PAYLOAD.salt) TOKEN = await decStr(KEY,o); }catch(e){} }
   $("#lock").classList.add("hidden"); $("#app").classList.remove("hidden");
-  $("#topNote").innerHTML = `اطلاعات تا <b>${fd(DATA.snapshot)}</b> از سایت قبلی منتقل شده. برای ثبت پرداخت، روی وضعیت هر قسط بزن. امروز: ${fd(TODAY)}`;
-  setupFilters(); rerender(); updateChip(); updateTokStatus();
+  prepare(); setupFilters(); rerender(); updateChip(); updateTokStatus();
   if(PENDING.length) scheduleFlush();
 }
 
@@ -513,7 +526,7 @@ async function copyText(t, btn){
   if(btn){ const o=btn.textContent; btn.textContent="کپی شد ✓"; setTimeout(()=>btn.textContent=o, 1500); }
 }
 const modal = $("#modal"), mbox = $("#mbox");
-function closeModal(){ modal.classList.add("hidden"); mbox.innerHTML=""; }
+function closeModal(){ modal.classList.add("hidden"); mbox.innerHTML=""; mbox.classList.remove("wide"); }
 modal.addEventListener("click", ev => { if(ev.target===modal) closeModal(); });
 document.addEventListener("keydown", ev => { if(ev.key==="Escape" && !modal.classList.contains("hidden")) closeModal(); });
 
@@ -567,6 +580,105 @@ function openPay(id, n, editing){
   $("#mPaid").onclick = () => { closeModal();
     doOp({t:"paid", id, n, v:1, on:TODAY}, `قسط ${faDigits(n)} ${l.person} (${l.bank}) پرداخت‌شده ثبت شد`, {t:"paid", id, n, v:0, on:null}); };
 }
+
+// ===== add loan =====
+function parseJ(s){
+  const m = toLatin(s).trim().replace(/[\/.]/g,"-").match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); if(!m) return null;
+  const y=+m[1], mo=+m[2], d=+m[3], max = mo<=6?31:mo<=11?30:30;
+  if(y<1300||y>1500||mo<1||mo>12||d<1||d>max) return null;
+  return `${y}-${p2(mo)}-${p2(d)}`;
+}
+function addMonthsDate(dt, k){
+  let y=+dt.slice(0,4), m=+dt.slice(5,7)+k, d=+dt.slice(8,10);
+  while(m>12){ m-=12; y++; }
+  const max = m<=6?31:m<=11?30:29; return `${y}-${p2(m)}-${p2(Math.min(d,max))}`;
+}
+const parseNum = s => { const x = toLatin(s).replace(/[,٬،\s]/g,"").replace(/٫/g,"."); return x==="" ? NaN : Number(x); };
+function selOrNew(id, items, label, fmt){
+  return `<select id="${id}">${items.map(v=>`<option value="${esc(v)}">${esc(fmt?fmt(v):v)}</option>`).join("")}<option value="__new">+ ${label} جدید…</option></select>
+    <input id="${id}New" class="hidden" placeholder="${label} جدید">`;
+}
+function openAddLoan(){
+  const banks=[...new Set(DATA.loans.map(l=>l.bank))];
+  const rates=[...new Set(DATA.loans.map(l=>+l.rate||0))].sort((a,b)=>a-b);
+  mbox.classList.add("wide");
+  mbox.innerHTML = `<h2>وام جدید</h2><p class="sub">اطلاعات وام را وارد کن؛ اقساط خودکار حساب می‌شود و قبل از ثبت می‌توانی مبلغ هر قسط را تغییر دهی.</p>
+  <form id="alForm" autocomplete="off"><div class="fgrid">
+    <label>وام‌گیرنده ${selOrNew("alPerson", DATA.persons, "نفر")}</label>
+    <label>بانک ${selOrNew("alBank", banks, "بانک")}</label>
+    <label>سود سالانه ${selOrNew("alRate", rates, "سود", r=>r? faDigits(r)+"٪" : "بدون سود")}</label>
+    <label>مدت (ماه)<input id="alMonths" inputmode="numeric" placeholder="مثلاً ۱۲"></label>
+    <label class="full">مبلغ وام (تومان)<input id="alAmount" inputmode="numeric" placeholder="مثلاً 200000000" class="ltr"><span class="hint" id="alAmountFa"></span></label>
+    <label>تاریخ دریافت<input id="alDate" value="${fd(TODAY)}" class="ltr" placeholder="1405/08/16"></label>
+    <label>تاریخ اولین قسط<input id="alFirst" value="${fd(addMonthsDate(TODAY,1))}" class="ltr"></label>
+    <label>شماره شبا (اختیاری)<input id="alSheba" class="ltr" placeholder="IR..."></label>
+    <label>صاحب حساب (اختیاری)<input id="alHolder"></label>
+  </div>
+  <div class="prev" id="alPrev"></div>
+  <div class="err" id="alErr"></div>
+  <div class="mactions"><button class="btn" type="submit" id="alSave">ثبت وام</button><button class="btn secondary" type="button" id="alCancel">انصراف</button></div></form>`;
+  modal.classList.remove("hidden");
+  const amin = DATA.persons.includes("امین") ? "امین" : DATA.persons[0]; if(amin) $("#alPerson").value = amin;
+  ["alPerson","alBank","alRate"].forEach(id => $("#"+id).addEventListener("change", () => {
+    const n=$("#"+id+"New"); n.classList.toggle("hidden", $("#"+id).value!=="__new"); if($("#"+id).value==="__new") n.focus(); calcPreview(); }));
+  let firstTouched=false;
+  $("#alFirst").addEventListener("input", ()=>{ firstTouched=true; calcPreview(); });
+  $("#alDate").addEventListener("input", ()=>{ const d=parseJ($("#alDate").value); if(d && !firstTouched) $("#alFirst").value=fd(addMonthsDate(d,1)); calcPreview(); });
+  ["alMonths","alAmount","alRateNew"].forEach(id => $("#"+id).addEventListener("input", calcPreview));
+  $("#alCancel").onclick = () => { mbox.classList.remove("wide"); closeModal(); };
+  $("#alForm").onsubmit = saveNewLoan;
+  $("#alMonths").focus(); calcPreview();
+}
+function readLoanForm(){
+  const pick = id => $("#"+id).value==="__new" ? $("#"+id+"New").value.trim() : $("#"+id).value;
+  const rateRaw = $("#alRate").value==="__new" ? parseNum($("#alRateNew").value) : +$("#alRate").value;
+  return { person: pick("alPerson"), bank: pick("alBank"), rate: rateRaw, months: parseNum($("#alMonths").value),
+    amount: parseNum($("#alAmount").value), date: parseJ($("#alDate").value), first: parseJ($("#alFirst").value),
+    sheba: $("#alSheba").value.trim(), holder: $("#alHolder").value.trim() };
+}
+let alSchedule = null;
+function calcPreview(){
+  const f = readLoanForm(), box=$("#alPrev"), err=$("#alErr"); err.textContent=""; alSchedule=null;
+  $("#alAmountFa").textContent = f.amount>0 ? fa(f.amount)+" تومان" : "";
+  const miss = [];
+  if(!(Number.isInteger(f.months) && f.months>=1 && f.months<=120)) miss.push("مدت (۱ تا ۱۲۰ ماه)");
+  if(!(f.amount>0)) miss.push("مبلغ وام");
+  if(!(f.rate>=0 && f.rate<100)) miss.push("سود");
+  if(!f.first) miss.push("تاریخ اولین قسط (مثل 1405/09/16)");
+  if(miss.length){ box.innerHTML = `<div class="hint">برای دیدن اقساط، این‌ها را کامل کن: ${miss.join("، ")}</div>`; return; }
+  const n=f.months, P=f.amount, r=f.rate/1200;
+  const A = r>0 ? P*r/(1-Math.pow(1+r,-n)) : P/n;
+  const each = r>0 ? Math.round(A) : Math.floor(P/n);
+  const total = r>0 ? Math.round(A*n) : P;
+  alSchedule = Array.from({length:n}, (_,k) => [k+1, addMonthsDate(f.first,k), k<n-1 ? each : total-each*(n-1)]);
+  const method = r>0 ? `قسط بانکی با سود ${faDigits(f.rate)}٪ سالانه روی مانده` : "اقساط مساوی بدون سود";
+  box.innerHTML = `<div class="row" style="margin-bottom:6px"><b>اقساط</b><span class="muted" style="font-size:13px">(${method})</span></div>
+    <div class="tw"><table><thead><tr><th>قسط</th><th>سررسید</th><th class="num">مبلغ (تومان)</th></tr></thead><tbody>${
+    alSchedule.map((x,k)=>`<tr><td>${faDigits(x[0])}</td><td>${fd(x[1])}</td><td class="num"><input data-k="${k}" value="${x[2]}" inputmode="numeric"></td></tr>`).join("")}</tbody>
+    <tfoot><tr><td colspan="2">جمع بازپرداخت</td><td class="num" id="alTot">${fa(total)}</td></tr></tfoot></table></div>`;
+  $$("#alPrev input").forEach(inp => inp.addEventListener("input", () => {
+    const v=parseNum(inp.value); if(v>=0) alSchedule[+inp.dataset.k][2]=v;
+    $("#alTot").textContent = fa(alSchedule.reduce((s,x)=>s+x[2],0)); }));
+}
+async function saveNewLoan(ev){
+  ev.preventDefault();
+  const f=readLoanForm(), err=$("#alErr");
+  if(!f.person){ err.textContent="نام وام‌گیرنده را وارد کن."; return; }
+  if(!f.bank){ err.textContent="نام بانک را وارد کن."; return; }
+  if(!f.date){ err.textContent="تاریخ دریافت درست نیست (مثل 1405/08/16)."; return; }
+  if(!alSchedule) calcPreview();
+  if(!alSchedule){ err.textContent="اطلاعات وام کامل نیست."; return; }
+  const edited = $$("#alPrev input").map(i=>parseNum(i.value));
+  if(edited.some(v=>!(v>=0))){ err.textContent="مبلغ یکی از اقساط درست نیست."; return; }
+  let sheba=null; if(f.sheba){ sheba=normSheba(f.sheba); if(!validSheba(sheba)){ err.textContent="شماره شبا درست نیست."; return; } }
+  const loan = {id: Date.now(), person:f.person, bank:f.bank, rate:f.rate, months:f.months, amount:f.amount, date:f.date,
+    sheba, holder: sheba? (f.holder||null) : null, added: TODAY,
+    inst: alSchedule.map((x,k)=>[x[0], x[1], edited[k], 0, null])};
+  mbox.classList.remove("wide"); closeModal();
+  await doOp({t:"addLoan", loan}, `وام جدید ${loan.person} (${loan.bank}) ثبت شد`, {t:"delLoan", id:loan.id});
+  openLoans.add(loan.id); $("#lperson").value=loan.person; renderLoans(); show("loans");
+}
+$("#addLoanBtn").onclick = openAddLoan;
 
 // ===== navigation =====
 $$("#tabs button").forEach(b => b.addEventListener("click", () => show(b.dataset.v)));
@@ -680,15 +792,15 @@ function renderPeople(){
 
 // ===== loans =====
 function setupFilters(){
-  const banks=[...new Set(DATA.loans.map(l=>l.bank))];
-  $("#ltype").innerHTML = `<option value="">همه بانک‌ها</option>` + banks.map(t=>`<option>${esc(t)}</option>`).join("");
   ["#lq","#lperson","#ltype","#lstat","#lsort"].forEach(s=>$(s).addEventListener("input", renderLoans));
   ["#imonth","#iperson","#iloan","#istat"].forEach(s=>$(s).addEventListener("input", renderInst));
-  const months=[...new Set(DATA.loans.flatMap(l=>l.inst.map(i=>ym(i[1])))) ].sort(), cur=TODAY.slice(0,7);
-  $("#imonth").innerHTML = `<option value="">همه ماه‌ها</option>` + months.map(k=>`<option value="${k}">${ymLabel(k)}${k===cur?" (این ماه)":""}</option>`).join("");
-  $("#imonth").value = months.includes(cur) ? cur : "";
+  const cur=TODAY.slice(0,7); refreshPersonSelects(); $("#imonth").value = [...$("#imonth").options].some(o=>o.value===cur) ? cur : "";
 }
 function refreshPersonSelects(){
+  { const v=$("#ltype").value, banks=[...new Set(DATA.loans.map(l=>l.bank))];
+    $("#ltype").innerHTML = `<option value="">همه بانک‌ها</option>` + banks.map(t=>`<option>${esc(t)}</option>`).join(""); $("#ltype").value=v; }
+  { const v=$("#imonth").value, cur=TODAY.slice(0,7), months=[...new Set(DATA.loans.flatMap(l=>l.inst.map(i=>ym(i[1]))))].sort();
+    $("#imonth").innerHTML = `<option value="">همه ماه‌ها</option>` + months.map(k=>`<option value="${k}">${ymLabel(k)}${k===cur?" (این ماه)":""}</option>`).join(""); $("#imonth").value=v; }
   ["#lperson","#iperson"].forEach(s => { const v=$(s).value;
     $(s).innerHTML = `<option value="">همه افراد</option>` + DATA.persons.filter(p=>LOANS.some(l=>l.person===p)).map(p=>`<option>${esc(p)}</option>`).join(""); $(s).value=v; });
   const v=$("#iloan").value, ip=$("#iperson").value;
@@ -702,9 +814,9 @@ function renderLoans(){
   const cmp = { date:(a,b)=>a.date.localeCompare(b.date)||a.id-b.id, remain:(a,b)=>b.remain-a.remain,
     next:(a,b)=>(a.next?a.next.due:"9999").localeCompare(b.next?b.next.due:"9999"), amount:(a,b)=>b.amount-a.amount }[so];
   rows.sort(cmp);
-  $("#lbody").innerHTML = rows.length ? rows.map(l=>{
+  $("#lbody").innerHTML = rows.length ? rows.map((l,idx)=>{
     const pct = Math.round(l.paidAmt/l.total*100);
-    return `<tr class="click" data-id="${l.id}"><td class="muted">${faDigits(l.id)}</td><td><b>${esc(l.person)}</b></td><td>${esc(l.bank)}</td><td>${rateTxt(l.rate)}</td><td>${faDigits(l.months)}</td><td>${fd(l.date)}</td>
+    return `<tr class="click" data-id="${l.id}"><td class="muted">${faDigits(idx+1)}</td><td><b>${esc(l.person)}</b></td><td>${esc(l.bank)}</td><td>${rateTxt(l.rate)}</td><td>${faDigits(l.months)}</td><td>${fd(l.date)}</td>
       <td class="num">${fa(l.amount)}</td><td>${faDigits(l.paidN)} از ${faDigits(l.inst.length)}</td>
       <td><div class="row" style="flex-wrap:nowrap"><div class="prog" style="flex:1"><i style="width:${pct}%"></i></div><span class="muted" style="font-size:12px">${faDigits(pct)}٪</span></div></td>
       <td class="num">${l.remain? fa(l.remain) : '<span class="pill st-paid"><span class="dot"></span>تسویه</span>'}</td>
@@ -718,6 +830,10 @@ function renderLoans(){
     if(sel.value==="__new"){ sel.nextElementSibling.classList.remove("hidden"); sel.nextElementSibling.querySelector("input").focus(); return; }
     doOp({t:"person", id, v:sel.value}, `وام ${l.bank} ${fd(l.date)} به نام ${sel.value} شد`, {t:"person", id, v:l.person});
   });
+  $$("#lbody .delLoan").forEach(x => x.onclick = ev => { ev.stopPropagation();
+    if(!x.classList.contains("danger")){ x.classList.remove("secondary"); x.classList.add("danger"); x.textContent="برای حذف دوباره بزن"; setTimeout(()=>{ if(x.isConnected){ x.classList.add("secondary"); x.classList.remove("danger"); x.textContent="حذف این وام"; } }, 4000); return; }
+    const id=+x.dataset.id, raw=JSON.parse(JSON.stringify(DATA.loans.find(l=>l.id===id)));
+    openLoans.delete(id); doOp({t:"delLoan", id}, `وام ${raw.person} (${raw.bank}) حذف شد`, {t:"addLoan", loan:raw}); });
   $$("#lbody .editSheba").forEach(x => x.onclick = ev => { ev.stopPropagation(); openSheba(+x.dataset.id); });
   $$("#lbody .newPerson").forEach(f => f.onsubmit = ev => { ev.preventDefault();
     const v=f.querySelector("input").value.trim(), id=+f.dataset.id, l=LOANS.find(x=>x.id===id); if(!v) return;
@@ -733,7 +849,8 @@ function detailRow(l){
       <form class="newPerson row hidden" data-id="${l.id}" style="gap:6px"><input class="inp" placeholder="نام نفر جدید"><button class="btn small">ثبت</button></form></span></div>
     ${merged}
     <div class="row" style="margin-top:8px;gap:6px">شبای پرداخت قسط: ${l.sheba ? `<b style="direction:ltr;display:inline-block">${fmtSheba(l.sheba)}</b>${l.holder? ` <span class="muted">(${esc(l.holder)})</span>`:""}` : '<span class="muted">ثبت نشده</span>'}
-      <button class="linkbtn editSheba" data-id="${l.id}">${l.sheba? "ویرایش" : "ثبت شبا"}</button></div>
+      <button class="linkbtn editSheba" data-id="${l.id}">${l.sheba? "ویرایش" : "ثبت شبا"}</button>
+      <span class="spacer"></span><button class="btn small secondary delLoan" data-id="${l.id}">حذف این وام</button></div>
     <div class="tw" style="margin-top:8px"><table><thead><tr><th>قسط</th><th>تاریخ سررسید</th><th class="num">مبلغ (تومان)</th><th>وضعیت</th><th>تاریخ ثبت پرداخت</th></tr></thead><tbody>${
     l.inst.map(i=>`<tr><td>${faDigits(i.n)}</td><td>${fd(i.due)}</td><td class="num">${fa(i.amt)}</td><td>${payBtn(i)}</td><td class="muted">${i.on? fd(i.on) : ""}</td></tr>`).join("")}</tbody></table></div></td></tr>`;
 }
