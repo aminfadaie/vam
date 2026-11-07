@@ -833,7 +833,7 @@ function rerender(){ prepare(); renderAlerts(); renderMissing(); renderSummary()
 let lateAll=false;
 function renderAlerts(){
   const late = INST.filter(i=>!i.paid && i.due<TODAY);
-  const today = INST.filter(i=>i.due===TODAY);
+  const today = INST.filter(i=>i.due===TODAY && !i.paid);
   const tnow = jDays(TODAY), sum = a => a.reduce((s,i)=>s+i.amt,0);
   const row = (i, isLate) => `<div class="alrow"><b>${esc(i.loan.person)}</b><span class="muted">${esc(i.loan.bank)} · قسط ${faDigits(i.n)} از ${faDigits(i.loan.inst.length)} · سررسید ${fd(i.due)}</span>
     ${isLate? `<span class="late-days">${faDigits(tnow-jDays(i.due))} روز گذشته</span>`:""}<span class="amt">${fa(i.amt)} تومان</span>${payBtn(i)}</div>`;
@@ -844,10 +844,9 @@ function renderAlerts(){
       ${late.length>5? `<div class="alrow"><button class="linkbtn" id="lateToggle">${lateAll? "نمایش کمتر" : `نمایش همه (${faDigits(late.length)} قسط)`}</button></div>`:""}</div>`;
   }
   if(today.length){
-    const un = today.filter(i=>!i.paid);
-    h += `<div class="today-box"><h3>📅 اقساط امروز (${fd(TODAY)}) — ${faDigits(today.length)} قسط${un.length? ` · مانده ${fa(sum(un))} تومان` : " · همه پرداخت شده ✓"}</h3>${today.map(i=>row(i,false)).join("")}</div>`;
+    h += `<div class="today-box"><h3>📅 اقساط امروز (${fd(TODAY)}) — ${faDigits(today.length)} قسط · جمع ${fa(sum(today))} تومان</h3>${today.map(i=>row(i,false)).join("")}</div>`;
   } else {
-    h += `<div class="quiet">📅 امروز (${fd(TODAY)}) قسطی سررسید نمی‌شود.</div>`;
+    h += `<div class="quiet">📅 امروز (${fd(TODAY)}) قسط پرداخت‌نشده‌ای نداری.</div>`;
   }
   $("#alertsBox").innerHTML = h;
   if($("#lateToggle")) $("#lateToggle").onclick = () => { lateAll=!lateAll; renderAlerts(); };
